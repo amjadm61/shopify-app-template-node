@@ -55,6 +55,57 @@ app.get("/api/products/count", async (_req, res) => {
   res.status(200).send({ count: countData.data.productsCount.count });
 });
 
+app.get("/api/products", async (req, res) => {
+  const client = new shopify.api.clients.Graphql({
+    session: res.locals.shopify.session,
+  });
+
+  const search = req.query.search ? `title:*${req.query.search}*` : null;
+
+  const productQuery = `
+    query Products($query: String) {
+      products(first: 50, query: $query) {
+        edges {
+          node {
+            id
+            title
+            totalInventory
+            variants(first: 1) {
+              edges {
+                node {
+                  sku
+                  inventoryQuantity
+                }
+              }
+            }
+            resourcePublications(first: 10) {
+              edges {
+                node {
+                  publication {
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`;
+
+  const data = await client.request(productQuery, { query: search });
+
+  const products = data.data.products.edges.map(({ node }) => ({
+    id: node.id,
+    title: node.title,
+    sku: node.variants.edges[0]?.node.sku || "",
+    quantity: node.variants.edges[0]?.node.inventoryQuantity || 0,
+    inStock: node.totalInventory > 0,
+    salesChannels: node.resourcePublications.edges.map((e) => e.node.publication.name),
+  }));
+
+  res.status(200).send({ products });
+});
+
 app.post("/api/products", async (_req, res) => {
   let status = 200;
   let error = null;
